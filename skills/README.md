@@ -35,13 +35,11 @@ ln -s ~/skills/kanban/implement ~/.claude/skills/kanban-implement
 > **注意**: CodeKanban 默认端口是 **3005**，本仓库示例使用 3007 是作者个人配置。请根据实际情况调整 `KANBAN_URL` 环境变量。
 
 ```bash
-# 安装 (npm)
-npm install -g codekanban
+# 快速运行（无需安装）
+npx codekanban
 
-# 或下载二进制
-# https://github.com/fy0/CodeKanban/releases
-
-# 启动服务 (默认端口 3005)
+# 或全局安装
+npm install -g codekanban@latest
 codekanban
 
 # 指定端口
@@ -251,26 +249,45 @@ curl -X POST "${API}/projects/{projectId}/tasks/create" \
 - `2`: P2 中
 - `3`: P3 低
 
-**Worktree API：**
+**Worktree 管理：**
+
+> ⚠️ **不要使用 Kanban API 创建 Worktree**，它会放在项目内部 `.worktrees/` 目录，且路径配置无法通过 API 修改。
+
+**推荐方式：手动创建到项目同级目录**
+
+```bash
+# 命名惯例：{project}-{branch-safe} 同级平铺
+PROJECT_PATH="/path/to/my-project"
+PROJECT_NAME=$(basename "$PROJECT_PATH")
+BRANCH_NAME="fix/issue-123"
+BRANCH_SAFE=$(echo "$BRANCH_NAME" | tr '/' '-')
+WORKTREE_PATH="$(dirname "$PROJECT_PATH")/${PROJECT_NAME}-${BRANCH_SAFE}"
+
+# 创建 worktree
+git -C "$PROJECT_PATH" worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME"
+
+# 同步到 Kanban（让它检测到新 worktree）
+curl -s -X POST "${API}/projects/{projectId}/sync-worktrees"
+
+# 获取 worktree ID 并绑定任务
+WORKTREE_ID=$(curl -s "${API}/projects/{projectId}/worktrees" | \
+  node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); \
+  console.log(d.items?.find(w=>w.branchName==='$BRANCH_NAME')?.id||'')")
+
+curl -X POST "${API}/tasks/{taskId}/move" \
+  -H "Content-Type: application/json" \
+  -d "{\"worktreeId\": \"$WORKTREE_ID\", \"status\": \"in_progress\"}"
+```
+
+**Worktree 只读 API：**
 
 | 操作 | API |
 |------|-----|
 | 列出 Worktrees | `GET ${API}/projects/{id}/worktrees` |
-| 创建 Worktree | `POST ${API}/projects/{id}/worktrees/create` |
+| 同步 Worktrees | `POST ${API}/projects/{id}/sync-worktrees` |
 | 删除 Worktree | `POST ${API}/worktrees/{id}?deleteBranch=true` |
 | 提交代码 | `POST ${API}/worktrees/{id}/commit` |
 | 合并分支 | `POST ${API}/worktrees/{id}/merge` |
-
-**创建 Worktree 示例：**
-```bash
-curl -X POST "${API}/projects/{projectId}/worktrees/create" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "branchName": "feature/new-feature",
-    "baseBranch": "main",
-    "createBranch": true
-  }'
-```
 
 ---
 
@@ -377,14 +394,14 @@ node ~/.claude/skills/kanban/kanban-cli.js status
 
 本项目基于以下优秀的开源项目和理念：
 
-| 组件 | 来源 | 说明 |
-|------|------|------|
-| **codeagent-wrapper** | [cexll/myclaude](https://github.com/cexll/myclaude) | 多后端 LLM CLI 封装 |
-| **project-index** | [@cexll](https://github.com/cexll) 敏捷开发实践 | 分层 CLAUDE.md 索引思想 |
-| **CodeKanban** | [fy0/CodeKanban](https://github.com/fy0/CodeKanban) | 本地任务管理服务 |
+| 组件 | 来源 | 许可证 | 说明 |
+|------|------|--------|------|
+| **codeagent-wrapper** | [cexll/myclaude](https://github.com/cexll/myclaude) | AGPL-3.0 | 多后端 LLM CLI 封装 |
+| **project-index** | [@cexll](https://github.com/cexll) 敏捷开发实践 | - | 分层 CLAUDE.md 索引思想 |
+| **CodeKanban** | [fy0/CodeKanban](https://github.com/fy0/CodeKanban) | Apache-2.0 | 本地任务管理服务 |
 
 ---
 
 ## 许可证
 
-MIT
+Apache-2.0

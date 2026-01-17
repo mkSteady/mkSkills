@@ -203,19 +203,28 @@ todo → in_progress → done
 curl -s "${API}/projects/{projectId}/worktrees" | jq '.items'
 ```
 
-### 3.2 创建 Worktree
+### 3.2 创建 Worktree（推荐方式）
+
+**不要使用 Kanban API 创建 worktree**，它会放在项目内部。使用 git 手动创建到项目同级目录：
 
 ```bash
-curl -X POST "${API}/projects/{projectId}/worktrees/create" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "branchName": "fix/issue-123",
-    "baseBranch": "main",
-    "createBranch": true
-  }'
+# 推荐路径结构：项目同级平铺，命名为 {project-name}-{branch-safe}
+# 例如：/mnt/f/pb/paper-burner → /mnt/f/pb/paper-burner-fix-issue-123
+
+PROJECT_PATH="/path/to/project"
+PROJECT_NAME=$(basename "$PROJECT_PATH")
+BRANCH_NAME="fix/issue-123"
+BRANCH_SAFE=$(echo "$BRANCH_NAME" | tr '/' '-')
+WORKTREE_PATH="$(dirname "$PROJECT_PATH")/${PROJECT_NAME}-${BRANCH_SAFE}"
+
+# 创建 worktree
+git -C "$PROJECT_PATH" worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME"
+
+# 同步到 Kanban
+curl -s -X POST "${API}/projects/${PROJECT_ID}/sync-worktrees"
 ```
 
-> **必填字段**: `branchName`, `baseBranch`, `createBranch`
+> **命名惯例**：`{project}-{branch-safe}`，如 `paper-burner-fix-test-assertions`
 
 ### 3.3 删除 Worktree
 
@@ -368,17 +377,27 @@ curl -X POST "${API}/projects/${PROJECT_ID}/tasks/create" \
 ### 7.2 开始任务工作流
 
 ```bash
-# 1. 创建 worktree
-WORKTREE=$(curl -s -X POST "${API}/projects/${PROJECT_ID}/worktrees/create" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "branchName": "fix/task-xxx"
-  }' | jq -r '.item.id')
+# 1. 创建 worktree（手动，不用 Kanban API）
+PROJECT_PATH="/path/to/project"
+PROJECT_NAME=$(basename "$PROJECT_PATH")
+BRANCH_NAME="fix/task-xxx"
+BRANCH_SAFE=$(echo "$BRANCH_NAME" | tr '/' '-')
+WORKTREE_PATH="$(dirname "$PROJECT_PATH")/${PROJECT_NAME}-${BRANCH_SAFE}"
 
-# 2. 绑定到任务并更新状态为进行中
+git -C "$PROJECT_PATH" worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME"
+
+# 2. 同步并获取 worktree ID
+curl -s -X POST "${API}/projects/${PROJECT_ID}/sync-worktrees"
+WORKTREE_ID=$(curl -s "${API}/projects/${PROJECT_ID}/worktrees" | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const wt = d.items?.find(w => w.branchName === '$BRANCH_NAME');
+console.log(wt?.id || '');
+")
+
+# 3. 绑定到任务并更新状态为进行中
 curl -X POST "${API}/tasks/${TASK_ID}/move" \
   -H "Content-Type: application/json" \
-  -d "{\"worktreeId\": \"${WORKTREE}\", \"status\": \"in_progress\"}"
+  -d "{\"worktreeId\": \"${WORKTREE_ID}\", \"status\": \"in_progress\"}"
 ```
 
 ### 7.3 完成任务工作流
@@ -546,24 +565,23 @@ node ~/.claude/skills/kanban-batch/kanban-planner.js
 
 3. **检查项目结构**
    - 项目路径是什么？
-   - 同级目录有没有 `worktrees/` 文件夹？
-   - 有没有其他命名惯例？
+   - 同级目录已有哪些 worktree？
+   - 命名惯例：`{project}-{branch-safe}`（同级平铺）
 
 4. **提出建议并请求用户确认**
    ```
    === Worktree 创建计划 ===
    任务: [任务标题]
-   分支名: fix/xxx 或 task/xxx
-   建议路径: /path/to/worktrees/branch-name
+   分支名: fix/xxx
+   建议路径: /path/to/project-fix-xxx
 
-   基于: [说明为什么建议这个路径]
+   基于: [说明为什么建议这个路径，如已有 worktree 的命名惯例]
 
    确认创建? 或指定其他路径?
    ```
 
 5. **用户确认后，手动创建 worktree**
    ```bash
-   mkdir -p "$(dirname "$WORKTREE_PATH")"
    git -C "$PROJECT_PATH" worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME"
    ```
 
