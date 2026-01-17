@@ -10,11 +10,8 @@ Code Kanban API 的完整封装，支持项目管理、任务管理、Worktree �
 ## 环境配置
 
 ```bash
-# 设置 API 地址 (默认 3007 端口)
+# 设置 API 地址 (CodeKanban 默认端口为 3005)
 export KANBAN_URL="http://127.0.0.1:3007"
-
-# 或使用其他端口
-export KANBAN_URL="http://127.0.0.1:3005"
 ```
 
 > **注意**: 下文所有 `${API}` 均指 `${KANBAN_URL}/api/v1`
@@ -36,7 +33,7 @@ export KANBAN_URL="http://127.0.0.1:3005"
 ## 基础配置
 
 ```bash
-# Shell 中使用
+# Shell 中使用 (默认端口 3005，按需修改)
 KANBAN_URL="${KANBAN_URL:-http://127.0.0.1:3007}"
 API="${KANBAN_URL}/api/v1"
 ```
