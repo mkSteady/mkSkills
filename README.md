@@ -70,14 +70,13 @@ codekanban --port 3005
 
 ### 2. codeagent-wrapper
 
-LLM 调用封装，用于批量代码分析任务。
+来自 myclaude 项目的 LLM 调用封装，用于批量代码分析任务。
 
 ```bash
-# 安装
-npm install -g codeagent-wrapper
+# 按照 myclaude skills 说明安装
+# https://github.com/cexll/myclaude
 
-# 验证
-codeagent-wrapper --version
+# 安装 myclaude skills 后，codeagent-wrapper 会自动可用
 ```
 
 **支持的后端：**
