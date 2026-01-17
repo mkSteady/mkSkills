@@ -10,30 +10,95 @@ Code Kanban API 的完整封装，支持项目管理、任务管理、Worktree �
 ## 环境配置
 
 ```bash
-# 设置 API 地址 (CodeKanban 默认端口为 3005)
+# 设置 API 地址 (CodeKanban 官方默认 3005，本项目使用 3007)
 export KANBAN_URL="http://127.0.0.1:3007"
 ```
 
 > **注意**: 下文所有 `${API}` 均指 `${KANBAN_URL}/api/v1`
+
+## AI 使用建议
+
+**优先使用 CLI 而非直接调用 API**，CLI 封装了常用操作且输出更简洁：
+
+```bash
+# 推荐：CLI 方式
+node ~/.claude/skills/kanban/kanban-cli.js list --status=todo
+
+# 不推荐：直接 curl API（输出冗长，占用上下文）
+curl -s "${API}/projects/{id}/tasks" | jq ...
+```
+
+**常用场景：**
+| 场景 | 命令 |
+|------|------|
+| 快速查看待办 | `list --status=todo` |
+| 查看进行中详情 | `list --status=in_progress -v` |
+| 查看单个任务 | `show <短ID>` |
+| 开始任务 | `start <id>` |
+| 完成任务 | `done <id>` |
+| 改优先级 | `move <id> --priority=0` |
 
 ## 命令速查
 
 | 命令 | 说明 |
 |------|------|
 | `/kanban` | 显示当前项目状态 |
-| `/kanban list` | 列出所有任务 |
+| `/kanban list` | 列出所有任务 (简略) |
+| `/kanban list -v` | 列出所有任务 (展开详情) |
+| `/kanban list --status=todo` | 只看待办 |
+| `/kanban list --status=in_progress` | 只看进行中 |
+| `/kanban list --status=done` | 只看已完成 |
+| `/kanban list --priority=0` | 只看 P0 紧急任务 |
+| `/kanban show <id>` | 查看任务详情 (支持短 ID) |
 | `/kanban add <title>` | 创建新任务 |
 | `/kanban done <id>` | 标记任务完成 |
 | `/kanban start <id>` | 开始任务 (in_progress) |
+| `/kanban move <id> --status=todo` | 改回待办 |
+| `/kanban move <id> --priority=0` | 改优先级 |
 | `/kanban batch` | 批量并行执行 |
 | `/kanban worktree <id>` | 为任务创建 worktree |
 | `/kanban export` | 导出 AI 友好的任务上下文 |
 | `/kanban export --json` | 导出 JSON 格式 |
 
+## CLI 直接调用
+
+```bash
+# CLI 路径
+CLI="$HOME/.claude/skills/kanban/kanban-cli.js"
+
+# 查看状态
+node "$CLI"
+
+# 列出任务
+node "$CLI" list --status=todo
+node "$CLI" list --status=in_progress -v
+
+# 查看详情 (支持短 ID)
+node "$CLI" show WtS0Nofb
+
+# 创建任务
+node "$CLI" add "新任务标题" --priority=1
+
+# 状态操作
+node "$CLI" start <id>      # 开始
+node "$CLI" done <id>       # 完成
+node "$CLI" move <id> --status=todo --priority=0  # 移动
+
+# 删除任务
+node "$CLI" delete <id>
+
+# 批量导入
+node "$CLI" import tasks.json
+
+# JSON 输出
+node "$CLI" list --json
+node "$CLI" show <id> --json
+```
+
 ## 基础配置
 
 ```bash
-# Shell 中使用 (默认端口 3005，按需修改)
+# Shell 中使用
 KANBAN_URL="${KANBAN_URL:-http://127.0.0.1:3007}"
 API="${KANBAN_URL}/api/v1"
 ```

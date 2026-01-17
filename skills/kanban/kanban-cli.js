@@ -11,6 +11,7 @@
  *   add <title>      创建新任务
  *   done <id>        标记任务完成
  *   start <id>       开始任务 (in_progress)
+ *   move <id>        移动任务 (改状态/优先级)
  *   delete <id>      删除任务
  *   show <id>        显示任务详情
  *   projects         列出所有项目
@@ -22,6 +23,7 @@
  *   --status=<s>     过滤状态 (todo/in_progress/done)
  *   --project=<id>   指定项目 ID
  *   --json           JSON 输出
+ *   --verbose, -v    显示完整详情
  *   --base-url=<url> API 基础 URL
  */
 
@@ -135,6 +137,24 @@ async function deleteTask(taskId) {
   return postJson(`${API}/tasks/${taskId}/delete`, {});
 }
 
+async function resolveTaskId(shortId, projectId) {
+  // 如果已经是完整 ID (16位)，直接返回
+  if (shortId.length >= 16) return shortId;
+
+  // 否则从项目任务列表中前缀匹配
+  const data = await fetchJson(`${API}/projects/${projectId}/tasks`);
+  const tasks = data.items || [];
+  const matches = tasks.filter(t => t.id.startsWith(shortId));
+
+  if (matches.length === 0) {
+    throw new Error(`No task found with ID prefix: ${shortId}`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Ambiguous ID prefix: ${shortId} (${matches.length} matches)`);
+  }
+  return matches[0].id;
+}
+
 async function getTask(taskId) {
   const data = await fetchJson(`${API}/tasks/${taskId}`);
   return data.item || data;
@@ -173,7 +193,14 @@ function formatTask(task, verbose = false) {
   const line = `${icon} [${priority}] ${task.title}`;
 
   if (verbose) {
-    return `${line}\n   ID: ${task.id}\n   Status: ${task.status}${task.description ? "\n   Desc: " + task.description.slice(0, 50) + "..." : ""}`;
+    const parts = [line, `   ID: ${task.id}`, `   Status: ${task.status}`];
+    if (task.description) {
+      parts.push(`   Description:\n${task.description.split('\n').map(l => '     ' + l).join('\n')}`);
+    }
+    if (task.tags?.length > 0) {
+      parts.push(`   Tags: ${task.tags.join(', ')}`);
+    }
+    return parts.join('\n');
   }
 
   return `${line} (${task.id.slice(0, 8)})`;
@@ -251,17 +278,17 @@ async function cmdList(options) {
 
     if (grouped.in_progress.length > 0) {
       console.log("\n◐ In Progress:");
-      grouped.in_progress.forEach((t) => console.log(`  ${formatTask(t)}`));
+      grouped.in_progress.forEach((t) => console.log(`  ${formatTask(t, options.verbose)}`));
     }
 
     if (grouped.todo.length > 0) {
       console.log("\n○ Todo:");
-      grouped.todo.forEach((t) => console.log(`  ${formatTask(t)}`));
+      grouped.todo.forEach((t) => console.log(`  ${formatTask(t, options.verbose)}`));
     }
 
     if (grouped.done.length > 0) {
       console.log("\n● Done:");
-      grouped.done.forEach((t) => console.log(`  ${formatTask(t)}`));
+      grouped.done.forEach((t) => console.log(`  ${formatTask(t, options.verbose)}`));
     }
   }
 }
@@ -277,22 +304,70 @@ async function cmdAdd(title, options) {
   console.log(`Created: ${result.item?.id || result.id}`);
 }
 
-async function cmdDone(taskId) {
+async function cmdDone(shortId) {
+  const project = await detectProject();
+  if (!project) {
+    console.error("No project found for current directory");
+    process.exit(1);
+  }
+  const taskId = await resolveTaskId(shortId, project.id);
   await updateTask(taskId, { status: "done" });
   console.log(`Marked as done: ${taskId}`);
 }
 
-async function cmdStart(taskId) {
+async function cmdStart(shortId) {
+  const project = await detectProject();
+  if (!project) {
+    console.error("No project found for current directory");
+    process.exit(1);
+  }
+  const taskId = await resolveTaskId(shortId, project.id);
   await updateTask(taskId, { status: "in_progress" });
   console.log(`Started: ${taskId}`);
 }
 
-async function cmdDelete(taskId) {
+async function cmdMove(shortId, options) {
+  const project = await detectProject();
+  if (!project) {
+    console.error("No project found for current directory");
+    process.exit(1);
+  }
+  const taskId = await resolveTaskId(shortId, project.id);
+
+  const updates = {};
+  if (options.status) updates.status = options.status;
+  if (options.priority !== undefined) updates.priority = options.priority;
+
+  if (Object.keys(updates).length === 0) {
+    console.error("Usage: kanban move <id> --status=<s> or --priority=<n>");
+    process.exit(1);
+  }
+
+  await updateTask(taskId, updates);
+  const parts = [];
+  if (updates.status) parts.push(`status → ${updates.status}`);
+  if (updates.priority !== undefined) parts.push(`priority → P${updates.priority}`);
+  console.log(`Moved ${taskId}: ${parts.join(", ")}`);
+}
+
+async function cmdDelete(shortId) {
+  const project = await detectProject();
+  if (!project) {
+    console.error("No project found for current directory");
+    process.exit(1);
+  }
+  const taskId = await resolveTaskId(shortId, project.id);
   await deleteTask(taskId);
   console.log(`Deleted: ${taskId}`);
 }
 
-async function cmdShow(taskId, options) {
+async function cmdShow(shortId, options) {
+  const project = await detectProject();
+  if (!project) {
+    console.error("No project found for current directory");
+    process.exit(1);
+  }
+  const taskId = await resolveTaskId(shortId, project.id);
   const task = await getTask(taskId);
 
   if (options.json) {
@@ -541,6 +616,7 @@ function parseArgs(args) {
     status: undefined,
     projectId: null,
     json: false,
+    verbose: false,
     format: "context",
   };
 
@@ -558,6 +634,8 @@ function parseArgs(args) {
     } else if (arg === "--json") {
       options.json = true;
       options.format = "json";
+    } else if (arg === "--verbose" || arg === "-v") {
+      options.verbose = true;
     } else if (!arg.startsWith("-")) {
       if (!options.command) {
         options.command = arg;
@@ -609,6 +687,14 @@ async function main() {
           process.exit(1);
         }
         await cmdStart(options.args[0]);
+        break;
+
+      case "move":
+        if (options.args.length === 0) {
+          console.error("Usage: kanban move <task-id> --status=<s> or --priority=<n>");
+          process.exit(1);
+        }
+        await cmdMove(options.args[0], options);
         break;
 
       case "delete":
